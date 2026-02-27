@@ -1,0 +1,157 @@
+#!/bin/bash
+
+#student name: Jianyun Yang
+#student number: 24181422
+#This program is to process three input TSV files, filter the data based on specific conditions, sort the data, merge the data, clean the data, and output the final data to a new file.
+
+# Check if three input files are provided
+if [ "$#" -ne 3 ]; then
+    echo "Error: You must input three TSV files." >&2
+    exit 1
+fi
+# Initialize a string variable to store all rows with missing dat
+missing_data_lines=""
+
+# Iterate over each file provided as an argument
+for file in "$@"; do
+    # Check if the file exists
+    if [ ! -f "$file" ]; then
+        echo "Error: File $file does not exist." >&2
+        continue
+    fi
+
+    # Check if the file is not empty (zero bytes)
+    if [ ! -s "$file" ]; then
+        echo "Error: File $file is empty." >&2
+        continue
+    fi
+
+    # Check if the file is likely a TSV file by checking for tabs in the first line
+    if ! head -1 "$file" | grep -q $'\t'; then
+        echo "Error: File $file does not appear to be a TSV file." >&2
+        continue 
+    fi
+    
+    # Use awk to check if the number of fields in each row is equal to the number of fields in the header
+    awk -F '\t' '
+    BEGIN {
+        missing_data_lines = ""
+    }
+    FNR == 1 {
+        # 处理每个文件的第一行
+        header_columns = NF
+        next
+    }
+    {
+        if (NF != header_columns) {
+            missing_data_lines = missing_data_lines FILENAME ": Line " FNR "\n"
+        }
+    }
+    END {
+        if (missing_data_lines) {
+            print "Files with missing cells:\n" missing_data_lines
+        } 
+    }
+    ' "$file"
+done
+
+# combine the first column(entity) and the third column(year) as a new column which will be used for joining
+awk -F'\t' '
+BEGIN {OFS="\t"}
+NR == 1 {
+    # Print the header with customized formatting
+    print $1 $3, $1, $2, $3, $4, $5, $6
+}
+NR > 1 && $2 != "" && $3 >= 2011 && $3 <= 2021 {
+    # Print rows that meet the conditions with formatted output
+    print $1 $3, $1, $2, $3, $4, $5, $6
+}' "$1" > outputfile1.tsv
+
+awk -F'\t' '
+BEGIN {OFS="\t"}
+NR == 1 {
+    # Print the header with customized formatting
+    print $1 $3, $1, $2, $3, $4, $5, $6
+}
+NR > 1 && $2 != "" && $3 >= 2011 && $3 <= 2021 {
+    # Print rows that meet the conditions with formatted output
+    print $1 $3, $1, $2, $3, $4, $5, $6
+}' "$2" > outputfile2.tsv
+
+awk -F'\t' '
+BEGIN {OFS="\t"}
+NR == 1 {
+    # Print the header with customized formatting
+    print $1 $3, $1, $2, $3, $4, $5, $6
+}
+NR > 1 && $2 != "" && $3 >= 2011 && $3 <= 2021 {
+    # Print rows that meet the conditions with formatted output
+    print $1 $3, $1, $2, $3, $4, $5, $6
+}' "$3" > outputfile3.tsv
+
+# sort the data before joining
+(head -n 1 outputfile1.tsv && tail -n +2 outputfile1.tsv | sort) > sorted_file1.tsv
+(head -n 1 outputfile2.tsv && tail -n +2 outputfile2.tsv | sort) > sorted_file2.tsv
+(head -n 1 outputfile3.tsv && tail -n +2 outputfile3.tsv | sort) > sorted_file3.tsv
+
+# join the three files based on the combined column
+join -t $'\t' -1 1 -2 1 -o 1.1,1.2,1.3,1.4,1.5,1.6,1.7,2.4,2.5,2.6,2.7 sorted_file1.tsv sorted_file2.tsv > outputfile4.tsv
+join -t $'\t' -1 1 -2 1 -o 1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,1.10,2.4,2.5,2.6,2.7 outputfile4.tsv sorted_file3.tsv > outputfile.tsv
+
+# clean the data by removing unwanted columns and standardizing the header
+awk -F'\t' '
+BEGIN { OFS="\t" }
+NR == 1 {
+    for (i = 1; i <= NF; i++) {
+        clean_header = tolower($i);
+        gsub(/[[:space:]]+/, "_", clean_header);
+        gsub(/[[:punct:]]+/, "", clean_header);
+
+        # check if the header is empty, a duplicate, or contains the word "continent"
+        if (clean_header == "" || seen[clean_header]++ || clean_header ~ /continent/) {
+            delete_col[i] = 1;  # 标记这一列为删除
+        } else {
+            header[i] = clean_header;  # save the cleaned header
+            printf("%s%s", (i == 1 ? "" : OFS), $i);  # print the cleaned header
+        }
+    }
+    print "";  
+}
+NR > 1 {
+    for (i = 1; i <= NF; i++) {
+        if (!delete_col[i]) {
+            printf("%s%s", (i == 1 ? "" : OFS), $i);  # print the data if the column is not marked for deletion
+        }
+    }
+    print "";  
+}' outputfile.tsv > outputfilefinal.tsv
+
+# use sed to remove the unwanted characters in the header
+sed '1s/[ ,()$:-]/_/g; 1s/"//g; 1s/__*/_/g; 1s/_$//g' outputfilefinal.tsv > outputfilefinal2.tsv
+
+# use awk to convert the header to lowercase
+awk 'NR==1 { for (i=1; i<=NF; i++) $i=tolower($i) } 1' FS='\t' OFS='\t' outputfilefinal2.tsv > outputfilefinal3.tsv
+
+# use awk to sort column of the data and output the cleaned data
+awk -F'\t' '
+BEGIN {OFS="\t"}
+NR == 1 {
+    for (i = 1; i <= NF; i++) {
+        header = substr($i, 1, 5);
+        if (header == "entit") col["entity"] = i;
+        else if (header == "code") col["code"] = i;
+        else if (header == "year") col["year"] = i;
+        else if (header == "gdp_p") col["gdp"] = i;
+        else if (header == "popul") col["population"] = i;
+        else if (header == "homic") col["homicide"] = i;
+        else if (header == "life_") col["life"] = i;
+        else if (header == "cantr") col["cantril"] = i;
+    }
+    print "Entity/Country", "Code", "Year", "GDP per capita", "Population", "Homicide Rate", "Life Expectancy", "Cantril Ladder score";
+}
+NR > 1 {
+    print $col["entity"], $col["code"], $col["year"], $col["gdp"], $col["population"], $col["homicide"], $col["life"], $col["cantril"];
+}' outputfilefinal3.tsv > cleaned_data.tsv
+
+# remove the intermediate files
+rm outputfile1.tsv outputfile2.tsv outputfile3.tsv sorted_file1.tsv sorted_file2.tsv sorted_file3.tsv outputfile4.tsv outputfile.tsv outputfilefinal.tsv outputfilefinal2.tsv outputfilefinal3.tsv

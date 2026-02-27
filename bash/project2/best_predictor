@@ -1,0 +1,122 @@
+#!/bin/bash
+
+#student name: Jianyun Yang
+#student number: 24181422
+#This program is to calculate the correlation between the Cantril Ladder score and each of the four predictors (GDP per capita, Population, Homicide Rate, and Life Expectancy) in the input file.
+
+# Usage and file existence check
+if [ "$#" -ne 1 ]; then
+    echo "Usage: $0 <inputfile>"
+    exit 1
+fi
+
+inputfile=$1
+
+# Check if the file exists
+if [ ! -f "$inputfile" ]; then
+    echo "Error: File $inputfile does not exist."
+    exit 1
+fi
+
+# Check if the file is not empty (zero bytes)
+if [ ! -s "$inputfile" ]; then
+    echo "Error: File $inputfile is empty."
+    exit 1
+fi
+
+# Check if the file is likely a TSV file by checking for tabs in the first line
+if ! head -1 "$inputfile" | grep -q $'\t'; then
+    echo "Error: File $inputfile does not appear to be a TSV file."
+    exit 1
+fi
+
+# Define the function to calculate correlations
+calculate_correlations() {
+    awk -F'\t' '
+    # Initialization block
+    BEGIN {
+        predictors["4"] = "GDP"
+        predictors["5"] = "Population"
+        predictors["6"] = "Homicide Rate"
+        predictors["7"] = "Life Expectancy"
+    }
+
+    # Processing each line except the header
+    NR > 1 {
+        for (i in predictors) {
+            value = $i
+            cantril = $8  # Cantril Ladder score in the 8th column
+
+            # Skip rows with empty predictor or Cantril score
+            if (value == "" || cantril == "") continue
+
+            # Aggregate values for correlation calculation
+            country = $1
+            count[country, predictors[i]]++
+            sum_x[country, predictors[i]] += value
+            sum_y[country, predictors[i]] += cantril
+            sum_x2[country, predictors[i]] += value * value
+            sum_y2[country, predictors[i]] += cantril * cantril
+            sum_xy[country, predictors[i]] += value * cantril
+        }
+    }
+
+    # End block to compute and print correlations
+    END {
+        for (key in count) {
+            split(key, arr, SUBSEP)
+            country = arr[1]
+            predictor = arr[2]
+
+            # Only consider countries with at least 3 data points
+            if (count[key] >= 3) {
+                n = count[key]
+                x = sum_x[key]
+                y = sum_y[key]
+                x2 = sum_x2[key]
+                y2 = sum_y2[key]
+                xy = sum_xy[key]
+
+                # Correlation calculation
+                numerator = n * xy - x * y
+                denominator = sqrt((n * x2 - x * x) * (n * y2 - y * y))
+                if (denominator != 0) {
+                    correlation = numerator / denominator
+                    printf "%s\t%s\t%.8f\n", country, predictor, correlation
+                }
+            }
+        }
+    }
+    ' "$inputfile" > temp_output.txt
+}
+
+# Compute all correlations and store in tempfile
+calculate_correlations
+
+# Calculate and print mean correlations and determine the most predictive factor
+awk -F'\t' '
+{
+    predictor = $2
+    correlation = $3
+    sum[predictor] += correlation
+    count[predictor]++
+}
+
+END {
+    max_corr = 0
+    for (p in sum) {
+        mean_corr = sum[p] / count[p]
+        printf "Mean correlation of %s with Cantril ladder is %.3f\n", p, mean_corr
+        # Determine the most predictive (largest absolute correlation)
+        if (abs(mean_corr) > abs(max_corr)) {
+            max_corr = mean_corr
+            best_predictor = p
+        }
+    }
+    printf "Most predictive mean correlation with the Cantril ladder is %s (r = %.3f)\n", best_predictor, max_corr
+}
+
+function abs(x) { return x < 0 ? -x : x }  # Helper function to find absolute value
+' temp_output.txt
+
+rm temp_output.txt  # Remove the temporary file
