@@ -1,0 +1,6 @@
+id,profession,age,time_spent_hour,engagement_score,platform,income
+1,student,20,5,50,facebook,1000
+2,nonstudent,-30,6,abc,twitter,2000
+3,student,25,-2,70,instagram,1500
+4,nonstudent,40,8,80,linkedin,invalid
+5,student,invalid,10,90,facebook,1200
